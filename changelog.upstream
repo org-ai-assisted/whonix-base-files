@@ -1,3 +1,222 @@
+commit 4bb7ecb3a5bae79a31651019d1c9e9e8e3332945
+Merge: f2eab62 5c620d8
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Sep 8 10:35:43 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/ArrayBolt3/arraybolt3/trixie'
+
+commit 5c620d87a050c3b1fd610c1ca7c58e852ffdb5a5
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Fri Sep 4 19:31:59 2026 -0400
+
+    Polish
+
+commit b959c40fe8e637bdec73a49cd4f9a021861b640c
+Merge: f2eab62 59ebe55
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Fri Sep 4 19:23:38 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit 59ebe55cffc61975ffa99e85272d54f57e8645fb
+Author: claude (dev272 e8b76afb-795c-4739-8ebd-023de854021e) <noreply@anthropic.com>
+Date:   Fri Aug 21 04:28:07 2026 -0400
+
+    whonix-base-files: source helper-scripts via HELPER_SCRIPTS_PATH, drop SC1091 disable
+
+    - usr/bin/whonix: use source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_colors.sh;
+      drop the dead '# shellcheck disable=SC1091' and the stale sibling note.
+    - usr/bin/whonix: add export LC_ALL=C to complete the strict-mode block (R-010).
+    - .github/dm-consumer.yml: add dist-ai-tests helper-scripts: true so the
+      pre-push-static gate checks out helper-scripts and shellcheck follows the source.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit bd51c3e0839c2740ff05c6d81877248ceaa6cc58
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Sat Aug 8 04:56:50 2026 -0400
+
+    CI: enrol in the pre-push static gate
+
+    This repo had no GitHub Actions workflow at all, so nothing verified its PRs on
+    the server side -- the only gate was ci-repro run locally.
+
+    The workflow file is the canonical consumer template, copied verbatim from
+    developer-meta-files/consumer-templates/.github/workflows/. It is managed: once
+    present, dm-packaging-helper-script's pkg_update_consumer_workflows keeps it in
+    sync, so it must not be hand-edited here.
+
+    Enrolment is deliberately a SEPARATE act from propagation: that function uses
+    pkg_update_if_exists, which only updates a workflow that already exists, and
+    pkg_install_dependabot_yml skips any repo with no .github/workflows/ directory.
+    Neither creates the first one. Hence this commit.
+
+    Scope: the repos this session actually changed and that ship shell code -- not
+    every repo lacking CI. Enrolling a repo consumes shared org-wide Actions
+    concurrency (20 jobs, the real limit; public repos are not minute-billed), so it
+    is worth spending where there is signal.
+
+    Verified BEFORE enrolling: 'ci-repro.sh --worktree' passes for this repo, so the
+    gate arrives green rather than turning someone's PR red on arrival.
+
+    NOTE, so it is not a surprise: creating .github/workflows/ makes this repo
+    eligible for the canonical .github/dependabot.yml on the next propagation pass,
+    which pkg_install_dependabot_yml installs into any repo that uses Actions.
+
+commit 94bdd834449dc69b7935d618a7fb5495bb1dbd2d
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 14:47:10 2026 -0400
+
+    declare helper-scripts: get_colors.sh is sourced unconditionally
+
+    The get_colors.sh port replaced inline 'tput' colour handling with a source of
+    another package's file. It did not declare the new dependency, so on a minimal
+    install the affected commands exit at the source line -- a breakage introduced
+    by the port itself, not a pre-existing one.
+
+    Affected, and introduced here:
+      kicksecure-base-files  usr/bin/kicksecure
+      whonix-base-files      usr/bin/whonix
+      tor-ctrl               usr/bin/tor-ctrl-circuit, usr/bin/tor-ctrl-stream
+
+    None of the three had any path to helper-scripts in Depends.
+
+    systemcheck is also included, but was NOT broken: its six check_*.bsh files
+    already sourced get_colors.sh before this work, and it reaches helper-scripts
+    transitively through dist-base-files. A direct unconditional source still
+    deserves a direct dependency.
+
+    user-sysmaint-split is deliberately NOT changed. Its one source is in
+    profile.d_20_sysmaint_warn.sh and carries '|| true', so it degrades instead of
+    failing -- and it runs in every login shell, where failing closed would be far
+    worse.
+
+    Found by codex, on whonix-base-files only. The other packages came from grepping
+    for the same pattern.
+
+    Testing
+    -------
+
+    A cross-package check rather than a per-package one, since the omission can
+    recur in any package that adopts get_colors.sh:
+
+      7 package(s) source get_colors.sh unguarded; fail=0
+
+    It only considers UNGUARDED sources -- a '||' fallback is exempt, which is what
+    excludes user-sysmaint-split -- and it refuses to pass when it finds no sources
+    at all, so a wrong path reports failure rather than a silent green.
+
+    Canary: removing helper-scripts from whonix-base-files gives
+      FAIL: whonix/whonix-base-files  sources get_colors.sh unguarded but does NOT
+            declare helper-scripts
+            usr/bin/whonix
+    and exits 1.
+
+commit b4e54f23e728fdd84ca258e6f1fb8e706f1476a0
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 11:29:16 2026 -0400
+
+    whonix-base-files: use the shared get_colors.sh instead of an inline tput palette
+
+    The script carried its own ~100-line BashFAQ/037 terminfo implementation --
+    'colors()' plus a 28-name palette -- duplicating what
+    /usr/libexec/helper-scripts/get_colors.sh already provides. Sourcing the shared
+    helper removes the duplicate.
+
+    It is also strictly better than what it replaces:
+
+    - The inline version suppressed colour only on an empty TERM. get_colors.sh
+      also honours NO_COLOR, ANSI_COLORS_DISABLED, TERM=unknown, and 'stderr is not
+      a terminal' -- so piping the output no longer embeds escape sequences.
+    - It sets every name to the empty string in the no-colour case, which is what
+      the strict-mode initialisation added in the previous commit was doing by
+      hand. That initialisation is now unnecessary and is gone, along with the
+      file-wide SC2034 and SC2015 waivers the inline implementation needed.
+
+    ONE DELIBERATE OUTPUT CHANGE, in the colour case only
+    ------------------------------------------------------
+
+    'reset' was 'tput sgr0', which on xterm-256color emits '\033(B\033[m' -- exit
+    attribute mode PLUS select-ASCII-character-set. get_colors.sh uses '\033[0m',
+    attributes only.
+
+    Both reset every attribute this text sets. The dropped '\033(B' only matters to
+    a terminal left in an alternate character set, and nothing here enters one --
+    the inline palette's 'draw' capability was assigned and never used, and
+    get_colors.sh documents 'draw' as intentionally unimplemented. Measured under a
+    real PTY: bold '\033[1m' and underline '\033[4m' are byte-identical, output is
+    8 bytes shorter.
+
+    Testing
+    -------
+
+    Gate exit 0 in an ISOLATED checkout.
+
+    Differential re-run with the REAL get_colors.sh installed, across TERM set,
+    empty and unset -- the three no-colour paths, which are byte-identical:
+
+      11 same, 0 differing
+
+    Plus a colour-enabled comparison under a real PTY, since both implementations
+    gate on "is stderr a terminal": the only difference is the reset sequence
+    described above.
+
+commit 7604a44135cde3b41ec7462a1ad424a515724982
+Author: claude (dev163 38f9745c-aed1-4fb4-b6ae-9899f20f8de2) <noreply@anthropic.com>
+Date:   Fri Aug 7 10:13:05 2026 -0400
+
+    whonix-base-files: R-010 strict mode for the 3 standalone scripts
+
+    Files: usr/bin/{whonix,whonix-disclaimer,whonix-license}.
+
+    Real nounset trap
+    -----------------
+
+    colors() returns EARLY when TERM is unset or empty, leaving the whole terminfo
+    palette unassigned -- and the help text below interpolates ${bold}, ${under}
+    and ${reset} unconditionally. So under nounset 'whonix' aborted in exactly the
+    case colors() exists to handle: no terminal. The same happens with TERM set but
+    tput unavailable.
+
+    The palette is initialised to empty, which is what those names expanded to
+    before strict mode: the text prints without escape sequences, which is the
+    point of the early return.
+
+    Also
+    ----
+
+    - 'echo' -> printf for both help texts (R-034), '$TERM' -> '${TERM:-}',
+      braces on the remaining bare reads, 'cat --' in the two one-line scripts.
+    - File-wide SC2034 waiver: colors() sets the full BashFAQ/037 palette and this
+      help text uses three of them. The rest are deliberately available rather than
+      dead, so they are flagged rather than deleted -- trimming the palette is not
+      this pass's business.
+    - File-wide SC2015 waiver on 'A && { ... } 2>/dev/null ||:'. shellcheck reads
+      it as a mistaken if-then-else, but C running when A is true is exactly the
+      intent: ':' swallows any tput failure.
+
+    Testing
+    -------
+
+    Gate exit 0 in an ISOLATED checkout.
+
+    New harness at ~/strict-pass-tests/wbf-test/. Both axes that matter are
+    covered: the marker file that selects the help text (gateway / workstation /
+    neither) crossed with TERM set, empty and unset, plus the two licence scripts.
+
+      11 same, 0 differing
+
+    Canary: with the palette initialisation removed but strict mode kept, the same
+    harness reports 5 same, 6 differing -- every gateway and workstation case
+    aborting on 'bold: unbound variable'. The initialisation is load-bearing, not
+    decoration.
+
+commit f2eab62361df771207b84315c6cf9519aec1c822
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Wed May 20 22:36:08 2026 +0000
+
+    bumped changelog version
+
 commit 8ff141cc806dcf31b2f37fd9d85fbd86d91d4d42
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Wed May 20 16:57:39 2026 -0400
